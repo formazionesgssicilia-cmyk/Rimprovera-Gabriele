@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Acchiappa Gabriele!</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #f3f4f6;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background: #e5e7eb;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            background-color: #fff9f2; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            border: 8px solid #8b4513;
+            max-width: 100%;
+            max-height: 100%;
+        }
+        .ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+            color: #1f2937;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px white;
+        }
+        .controls-hint {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.8);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+        #mobile-controls {
+            position: absolute;
+            bottom: 40px;
+            right: 40px;
+            display: none;
+            grid-template-columns: repeat(3, 60px);
+            grid-template-rows: repeat(2, 60px);
+            gap: 10px;
+            pointer-events: auto;
+        }
+        .btn-ctrl {
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            border: none;
+            border-radius: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 28px;
+            user-select: none;
+        }
+        @media (max-width: 768px) {
+            #mobile-controls { display: grid; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div class="ui-overlay">
+        <div class="text-2xl">Rimproveri: <span id="score">0</span></div>
+        <div class="text-sm">Prendi Gabriele prima che distragga tutta la classe!</div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="controls-hint hidden md:block">
+        Usa le <b>frecce</b> per muovere il Professore 👨‍🏫
+    </div>
+
+    <div id="mobile-controls">
+        <div></div>
+        <button class="btn-ctrl" id="btn-up">↑</button>
+        <div></div>
+        <button class="btn-ctrl" id="btn-left">←</button>
+        <button class="btn-ctrl" id="btn-down">↓</button>
+        <button class="btn-ctrl" id="btn-right">→</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreElement = document.getElementById('score');
+
+    const GAME_WIDTH = 800;
+    const GAME_HEIGHT = 600;
+    canvas.width = GAME_WIDTH;
+    canvas.height = GAME_HEIGHT;
+
+    let score = 0;
+    let gameRunning = true;
+    let frameCount = 0;
+
+    const professor = {
+        x: 50,
+        y: 80,
+        width: 40,
+        height: 60,
+        speed: 5.5,
+        color: '#2c3e50',
+        dx: 0,
+        dy: 0
+    };
+
+    const gabriele = {
+        x: 700,
+        y: 500,
+        width: 35,
+        height: 50,
+        speed: 3.8,
+        color: '#e67e22',
+        angle: 0,
+        isLaughing: false,
+        laughPhase: 0
+    };
+
+    const desks = [];
+    const otherStudents = [];
+
+    function initClassroom() {
+        const rows = 4;
+        const cols = 5;
+        const spacingX = 140;
+        const spacingY = 120;
+        const offsetX = 120;
+        const offsetY = 120;
+
+        const hairColors = ['#4a3728', '#2c1e14', '#d4a373', '#8d99ae'];
+        const shirtColors = ['#3498db', '#2ecc71', '#9b59b6', '#f1c40f', '#1abc9c'];
+
+        for(let i=0; i<rows; i++) {
+            for(let j=0; j<cols; j++) {
+                const dx = offsetX + j * spacingX;
+                const dy = offsetY + i * spacingY;
+                
+                desks.push({
+                    x: dx,
+                    y: dy,
+                    width: 60,
+                    height: 40
+                });
+
+                if (Math.random() < 0.6) {
+                    otherStudents.push({
+                        x: dx + 12,
+                        y: dy + 5,
+                        width: 35,
+                        height: 40,
+                        hair: hairColors[Math.floor(Math.random() * hairColors.length)],
+                        shirt: shirtColors[Math.floor(Math.random() * shirtColors.length)],
+                        isLaughing: false,
+                        laughPhase: 0
+                    });
+                }
+            }
+        }
+    }
+
+    const keys = {};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    const setupMobileBtn = (id, code) => {
+        const btn = document.getElementById(id);
+        if(!btn) return;
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[code] = true; });
+        btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[code] = false; });
+    };
+    setupMobileBtn('btn-up', 'ArrowUp');
+    setupMobileBtn('btn-down', 'ArrowDown');
+    setupMobileBtn('btn-left', 'ArrowLeft');
+    setupMobileBtn('btn-right', 'ArrowRight');
+
+    function checkCollision(rect1, rect2) {
+        return rect1.x < rect2.x + rect2.width &&
+               rect1.x + rect1.width > rect2.x &&
+               rect1.y < rect2.y + rect2.height &&
+               rect1.y + rect1.height > rect2.y;
+    }
+
+    function moveProfessor() {
+        professor.dx = 0;
+        professor.dy = 0;
+        if (keys['ArrowUp']) professor.dy = -professor.speed;
+        if (keys['ArrowDown']) professor.dy = professor.speed;
+        if (keys['ArrowLeft']) professor.dx = -professor.speed;
+        if (keys['ArrowRight']) professor.dx = professor.speed;
+
+        const nextX = professor.x + professor.dx;
+        const nextY = professor.y + professor.dy;
+
+        let canMoveX = nextX > 0 && nextX + professor.width < GAME_WIDTH;
+        let canMoveY = nextY > 0 && nextY + professor.height < GAME_HEIGHT;
+
+        for (let desk of desks) {
+            if (checkCollision({ ...professor, x: nextX }, desk)) canMoveX = false;
+            if (checkCollision({ ...professor, y: nextY }, desk)) canMoveY = false;
+        }
+
+        if (canMoveX) professor.x = nextX;
+        if (canMoveY) professor.y = nextY;
+    }
+
+    function moveGabriele() {
+        gabriele.angle += (Math.random() - 0.5) * 0.25;
+        let vx = Math.cos(gabriele.angle) * gabriele.speed;
+        let vy = Math.sin(gabriele.angle) * gabriele.speed;
+
+        const distProf = Math.hypot(professor.x - gabriele.x, professor.y - gabriele.y);
+        
+        if (distProf < 180) {
+            const escapeAngle = Math.atan2(gabriele.y - professor.y, gabriele.x - professor.x);
+            vx = Math.cos(escapeAngle) * (gabriele.speed + 1.2);
+            vy = Math.sin(escapeAngle) * (gabriele.speed + 1.2);
+            gabriele.isLaughing = true;
+        } else {
+            gabriele.isLaughing = frameCount % 120 < 40; 
+        }
+
+        const nextX = gabriele.x + vx;
+        const nextY = gabriele.y + vy;
+
+        let canMove = nextX > 0 && nextX + gabriele.width < GAME_WIDTH && nextY > 0 && nextY + gabriele.height < GAME_HEIGHT;
+        if (canMove) {
+            for (let desk of desks) {
+                if (checkCollision({ ...gabriele, x: nextX, y: nextY }, desk)) {
+                    canMove = false;
+                    break;
+                }
+            }
+        }
+
+        if (canMove) {
+            gabriele.x = nextX;
+            gabriele.y = nextY;
+        } else {
+            gabriele.angle += Math.PI * (Math.random() + 0.5);
+        }
+
+        gabriele.laughPhase = gabriele.isLaughing ? Math.sin(frameCount * 0.4) * 5 : 0;
+
+        otherStudents.forEach(s => {
+            const distToGabriele = Math.hypot(s.x - gabriele.x, s.y - gabriele.y);
+            if (distToGabriele < 100 && gabriele.isLaughing) {
+                s.isLaughing = true;
+                s.laughPhase = Math.sin(frameCount * 0.3) * 4;
+            } else {
+                s.isLaughing = false;
+            }
+        });
+    }
+
+    function drawStudent(s, isGabriele = false) {
+        const sx = s.x + s.width / 2;
+        const sy = s.y;
+
+        ctx.fillStyle = isGabriele ? '#e74c3c' : s.shirt;
+        ctx.beginPath();
+        ctx.roundRect(s.x, s.y, s.width, s.height, 8);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffdbac';
+        ctx.beginPath();
+        ctx.arc(sx, sy - 5, 18, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = isGabriele ? '#63472b' : s.hair;
+        ctx.beginPath();
+        ctx.arc(sx, sy - 10, 20, Math.PI, 0);
+        ctx.fill();
+        ctx.fillRect(sx - 20, sy - 10, 40, 8);
+
+        ctx.fillStyle = 'black';
+        if (s.isLaughing) {
+            ctx.beginPath();
+            ctx.moveTo(sx - 10, sy - 8);
+            ctx.lineTo(sx - 3, sy - 8);
+            ctx.moveTo(sx + 3, sy - 8);
+            ctx.lineTo(sx + 10, sy - 8);
+            ctx.stroke();
+        } else {
+            ctx.beginPath();
+            ctx.arc(sx - 7, sy - 8, 2, 0, Math.PI * 2);
+            ctx.arc(sx + 7, sy - 8, 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.fillStyle = '#800000';
+        const mWidth = 12;
+        const mOpen = s.isLaughing ? 7 + s.laughPhase : 2;
+        ctx.beginPath();
+        ctx.ellipse(sx, sy + 4, mWidth/2, mOpen/2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        if (s.isLaughing) {
+            ctx.fillStyle = 'white';
+            ctx.fillRect(sx - 3, sy + 2, 6, 1.5);
+            ctx.fillStyle = 'black';
+            ctx.font = 'bold 10px Arial';
+            ctx.fillText('AHAH!', sx + 15, sy - 20);
+        }
+    }
+
+    function drawProfessor() {
+        const px = professor.x + professor.width / 2;
+        const py = professor.y;
+
+        ctx.fillStyle = professor.color;
+        ctx.beginPath();
+        ctx.roundRect(professor.x, professor.y, professor.width, professor.height, 5);
+        ctx.fill();
+
+        ctx.fillStyle = '#f1c27d';
+        ctx.beginPath();
+        ctx.arc(px, py - 10, 22, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#7f8c8d';
+        ctx.beginPath();
+        ctx.arc(px, py - 20, 23, Math.PI, 0);
+        ctx.fill();
+
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(px - 14, py - 14, 10, 7);
+        ctx.strokeRect(px + 4, py - 14, 10, 7);
+        ctx.beginPath();
+        ctx.moveTo(px - 4, py - 10);
+        ctx.lineTo(px + 4, py - 10);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(px - 8, py + 2);
+        ctx.lineTo(px + 8, py + 2);
+        ctx.stroke();
+    }
+
+    function drawClassSign() {
+        // Disegna il cartello "5B" sulla parete
+        const signX = 720;
+        const signY = 20;
+        ctx.fillStyle = 'white';
+        ctx.fillRect(signX, signY, 50, 30);
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(signX, signY, 50, 30);
+        
+        ctx.fillStyle = 'black';
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('5B', signX + 25, signY + 22);
+        ctx.textAlign = 'start'; // Reset
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Pavimento
+        ctx.fillStyle = '#fff9f2';
+        ctx.fillRect(0,0, canvas.width, canvas.height);
+        
+        drawClassSign();
+
+        // Disegna banchi
+        desks.forEach(desk => {
+            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            ctx.fillRect(desk.x + 4, desk.y + 4, desk.width, desk.height);
+            ctx.fillStyle = '#d2691e';
+            ctx.fillRect(desk.x, desk.y, desk.width, desk.height);
+            ctx.strokeStyle = '#a0522d';
+            ctx.strokeRect(desk.x, desk.y, desk.width, desk.height);
+        });
+
+        otherStudents.forEach(s => drawStudent(s, false));
+        drawStudent(gabriele, true);
+        drawProfessor();
+
+        if (checkCollision(professor, gabriele)) {
+            score++;
+            scoreElement.innerText = score;
+            gabriele.x = Math.random() * (GAME_WIDTH - 100) + 50;
+            gabriele.y = Math.random() * (GAME_HEIGHT - 100) + 50;
+            
+            canvas.style.borderColor = '#e74c3c';
+            setTimeout(() => canvas.style.borderColor = '#8b4513', 200);
+        }
+    }
+
+    function update() {
+        if (!gameRunning) return;
+        frameCount++;
+        moveProfessor();
+        moveGabriele();
+        draw();
+        requestAnimationFrame(update);
+    }
+
+    initClassroom();
+    window.onload = update;
+</script>
+</body>
+</html>
